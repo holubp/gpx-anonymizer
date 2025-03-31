@@ -4,10 +4,6 @@ import math
 import logging
 import xml.etree.ElementTree as ET
 
-# GPX namespace.
-GPX_NS = "http://www.topografix.com/GPX/1/1"
-ET.register_namespace("", GPX_NS)
-
 def haversine(lat1, lon1, lat2, lon2):
     """
     Compute the great-circle distance (in meters) between two points.
@@ -84,9 +80,17 @@ def process_gpx_with_stats(input_file, output_file, rects, circles, max_stray_le
       - The number of points removed per manual region.
       - For each manual region, the count and length statistics of stray segments (within that region’s vicinity).
     """
+
     tree = ET.parse(input_file)
     root = tree.getroot()
-    ns = {"default": GPX_NS}
+    # Detect the namespace from the root element.
+    ns = {}
+    if root.tag.startswith("{"):
+        uri = root.tag[1:root.tag.find("}")]
+        ns = {"default": uri}
+        ET.register_namespace("", uri)
+    else:
+        ns = {"default": ""}
 
     total_points_removed = 0
     rect_removed_counts = [0] * len(rects)
@@ -122,7 +126,10 @@ def process_gpx_with_stats(input_file, output_file, rects, circles, max_stray_le
                 segments_from_trkseg.append(current_seg_points)
             trk.remove(trkseg)
             for seg_points in segments_from_trkseg:
-                new_seg = ET.Element("{" + GPX_NS + "}trkseg")
+                if ns["default"]:
+                    new_seg = ET.Element("{" + ns["default"] + "}trkseg")
+                else:
+                    new_seg = ET.Element("trkseg")
                 for pt in seg_points:
                     new_seg.append(pt)
                 new_segments.append(new_seg)
@@ -140,7 +147,7 @@ def process_gpx_with_stats(input_file, output_file, rects, circles, max_stray_le
     stray_rect = [ [] for _ in rects ]    # For each rectangle: list of segment lengths.
     stray_circle = [ [] for _ in circles ]  # For each circle: list of segment lengths.
     for seg_idx, seg in enumerate(new_segments):
-        pts = seg.findall("{" + GPX_NS + "}trkpt")
+        pts = seg.findall("{" + ns["default"] + "}trkpt")
         if len(pts) < 2:
             seg_length = 0.0
         else:
@@ -201,7 +208,7 @@ def process_gpx_with_stats(input_file, output_file, rects, circles, max_stray_le
     # Update each track: remove old <trkseg> elements and append final segments.
     for trk in root.findall("default:trk", ns):
         for child in list(trk):
-            if child.tag == "{" + GPX_NS + "}trkseg":
+            if child.tag == "{" + ns["default"] + "}trkseg":
                 trk.remove(child)
         for seg in final_segments:
             trk.append(seg)
